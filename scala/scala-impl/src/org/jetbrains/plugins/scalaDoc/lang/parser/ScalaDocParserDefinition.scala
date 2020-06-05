@@ -18,6 +18,7 @@ final class ScalaDocParserDefinition extends ParserDefinition {
 
   import ScalaDocElementTypes._
   import ScalaDocTokenType._
+  import ScalaDocParserDefinition.isInsideThrowsTag
 
   override val getFileNodeType = new IFileElementType(ScalaDocLanguage.INSTANCE)
 
@@ -32,9 +33,22 @@ final class ScalaDocParserDefinition extends ParserDefinition {
   override def createParser(project: Project) = new ScalaDocParser
 
   override def createElement(node: ASTNode): PsiElement = node.getElementType match {
-    case elementType: ScaladocSyntaxElementType =>
+    case DOC_INNER_CODE_TAG   => new ScDocInnerCodeElementImpl(node)
+    case DOC_INLINED_TAG      => new ScDocInlinedTagImpl(node)
+    case DOC_PARAM_REF        => new ScDocParamRefImpl(node)
+    case DOC_METHOD_REF       => new ScDocMethodRefImpl(node)
+    case DOC_FIELD_REF        => new ScDocFieldRefImpl(node)
+    case DOC_METHOD_PARAMS    => new ScDocMethodParamsImpl(node)
+    case DOC_METHOD_PARAMETER => new ScDocMethodParameterImpl(node)
+    case DOC_CODE_LINK_VALUE  =>
+      new ScDocResolvableCodeReferenceImpl(node)
+    case DOC_TAG              => new ScDocTagImpl(node)
+    case DOC_TAG_VALUE_TOKEN                   =>
+      if (isInsideThrowsTag(node)) new ScDocThrowTagValueImpl(node)
+      else new ScDocTagValueImpl(node)
+    case syntaxType: ScaladocSyntaxElementType =>
       val result = new ScDocSyntaxElementImpl(node)
-      result.setFlag(elementType.getFlagConst)
+      result.setFlag(syntaxType.getFlagConst)
 
       var parentNode = node
       while (parentNode.getTreeParent != null &&
@@ -49,31 +63,24 @@ final class ScalaDocParserDefinition extends ParserDefinition {
       }
 
       result
-    case DOC_INNER_CODE_TAG => new ScDocInnerCodeElementImpl(node)
-    case DOC_TAG => new ScDocTagImpl(node)
-    case DOC_INLINED_TAG => new ScDocInlinedTagImpl(node)
-    case DOC_PARAM_REF => new ScDocParamRefImpl(node)
-    case DOC_METHOD_REF => new ScDocMethodRefImpl(node)
-    case DOC_FIELD_REF => new ScDocFieldRefImpl(node)
-    case DOC_METHOD_PARAMS => new ScDocMethodParamsImpl(node)
-    case DOC_METHOD_PARAMETER => new ScDocMethodParameterImpl(node)
-    case DOC_CODE_LINK_VALUE => new ScDocResolvableCodeReferenceImpl(node)
-    case DOC_TAG_VALUE_TOKEN =>
-      var parent = node.getTreeParent
-
-      while (parent != null && parent.getPsi != null && !parent.getPsi.isInstanceOf[ScDocTag]) {
-        parent = parent.getTreeParent
-      }
-
-      val isThrows = parent != null && (parent.getPsi match {
-        case tag: ScDocTag => tag.getName == MyScaladocParsing.THROWS_TAG
-        case _ => false
-      })
-
-      if (isThrows) new ScDocThrowTagValueImpl(node)
-      else new ScDocTagValueImpl(node)
     case _ => new ASTWrapperPsiElement(node)
   }
 
   override def createFile(viewProvider: FileViewProvider): PsiFile = null
+}
+
+object ScalaDocParserDefinition {
+
+  private def isInsideThrowsTag(node: ASTNode) = {
+    var parent = node.getTreeParent
+
+    while (parent != null && parent.getPsi != null && !parent.getPsi.isInstanceOf[ScDocTag]) {
+      parent = parent.getTreeParent
+    }
+
+    parent != null && (parent.getPsi match {
+      case tag: ScDocTag => tag.getName == MyScaladocParsing.THROWS_TAG
+      case _             => false
+    })
+  }
 }

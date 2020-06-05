@@ -39,6 +39,7 @@ import org.jetbrains.plugins.scala.lang.lexer.ScalaTokenTypes;
 %{ // User code
 
   private boolean isOddItalicBold = false;;
+  private int braceCount = 0;
 
   public _ScalaDocLexer() {
     this((java.io.Reader)null);
@@ -79,7 +80,6 @@ import org.jetbrains.plugins.scala.lang.lexer.ScalaTokenTypes;
 %state INLINE_TAG_DOC_SPACE
 %state CODE_LINK_INNER
 %state CODE_BAD_LINK
-%state HTTP_LINK_INNER
 %state DOC_TAG_VALUE_SPACE
 %xstate COMMENT_INNER_CODE
 %xstate INNER_CODE_WHITESPACE
@@ -92,6 +92,9 @@ ALPHA=[:jletter:]
 TAG_IDENTIFIER=[^\ \t\f\n\r]+ // SCL-13537
 INLINE_TAG_IDENTIFIER=[^\ \t\f\n\r}]+
 MACRO_IDENTIFIER=("{" .* "}") | ({ALPHA} | {DIGIT})+ // SCL-9720
+
+DOC_COMMENT_BEGIN = "/*""*"
+COMMENT_END = "*/"
 
 /////////////////////////////////// for arbitrary scala identifiers////////////////////////////////////////////////////
 special = \u0021 | \u0023 | [\u0025-\u0026] | [\u002A-\u002B] | \u002D | \u005E | \u003A| [\u003C-\u0040]| \u007E
@@ -117,7 +120,27 @@ plainid = {varid} | {op}
 
 %%
 
-<YYINITIAL> "/**" { yybegin(COMMENT_DATA_START); return DOC_COMMENT_START; }
+<YYINITIAL> {DOC_COMMENT_BEGIN} {
+  braceCount++;
+  yybegin(COMMENT_DATA_START);
+  return DOC_COMMENT_START;
+}
+{DOC_COMMENT_BEGIN} {
+  braceCount++;
+  yybegin(COMMENT_DATA);
+  return DOC_COMMENT_DATA;
+}
+{COMMENT_END} {
+  braceCount--;
+  if (braceCount == 0) {
+    return DOC_COMMENT_END;
+  }
+  else {
+    yybegin(COMMENT_DATA);
+    return DOC_COMMENT_DATA;
+  }
+}
+
 <COMMENT_DATA_START> {WHITE_DOC_SPACE_CHAR}+ { return DOC_WHITESPACE; }
 <COMMENT_DATA>  {WHITE_DOC_SPACE_NO_NL}+ { return DOC_COMMENT_DATA; }
 <COMMENT_DATA, COMMENT_INNER_CODE>  [\n\r]+{WHITE_DOC_SPACE_CHAR}* { return DOC_WHITESPACE; }
@@ -199,7 +222,7 @@ plainid = {varid} | {op}
   return DOC_COMMENT_BAD_CHARACTER;
 }
 <CODE_LINK_INNER> ({plainid} | "`" {stringLiteralExtra} "`") {
-  yybegin(CODE_BAD_LINK);
+  yybegin(COMMENT_DATA);
   return tIDENTIFIER;
 }
 <CODE_LINK_INNER, COMMENT_DATA, CODE_BAD_LINK, COMMENT_DATA_START> ("]]"|"\u005d\u005d") {
@@ -270,5 +293,4 @@ plainid = {varid} | {op}
   return DOC_WHITESPACE;
 }
 
-\*+"/" { return DOC_COMMENT_END; }
 [^] { return DOC_COMMENT_BAD_CHARACTER; }

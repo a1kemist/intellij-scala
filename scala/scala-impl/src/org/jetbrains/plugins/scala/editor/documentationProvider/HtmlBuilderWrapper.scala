@@ -33,13 +33,6 @@ private class HtmlBuilderWrapper(delegate: StringBuilder) {
     append(s"</$tag>")
   }
 
-  def withHtmlMarkup(inner: => Unit): Unit =
-    html {
-      body {
-        inner
-      }
-    }
-
   def html(inner: => Unit): Unit = withTag("html")(inner)
   def body(inner: => Unit): Unit = withTag("body")(inner)
   def pre(inner: => Unit): Unit = withTag("pre")(inner)

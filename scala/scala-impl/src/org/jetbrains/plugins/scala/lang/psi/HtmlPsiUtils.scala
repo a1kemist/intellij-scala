@@ -8,10 +8,14 @@ import org.jetbrains.plugins.scala.extensions.{PsiClassExt, PsiNamedElementExt}
 object HtmlPsiUtils {
 
   def psiElementLink(fqn: String, content: String): String = {
+    val href = psiElementHref(fqn)
     val escapedContent = escape(content)
     val contentWrapped = s"""<code>$escapedContent</code>"""
-    s"""<a href="psi_element://${escape(fqn)}">$contentWrapped</a>"""
+    s"""<a href="$href">$contentWrapped</a>"""
   }
+
+  def psiElementHref(fqn: String): String =
+    s"psi_element://${escape(fqn)}"
 
   def classLink(clazz: PsiClass): String =
     psiElementLink(clazz.qualifiedName, clazz.name)
