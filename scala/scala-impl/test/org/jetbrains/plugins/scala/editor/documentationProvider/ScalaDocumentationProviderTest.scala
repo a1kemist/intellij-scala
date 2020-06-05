@@ -1,5 +1,7 @@
 package org.jetbrains.plugins.scala.editor.documentationProvider
 
+import org.locationtech.jts.util.AssertionFailedException
+
 // TODO: in-editor doc: code example in the end of the doc produces new line
 class ScalaDocumentationProviderTest extends ScalaDocumentationProviderTestBase {
 
@@ -910,5 +912,9 @@ class ScalaDocumentationProviderTest extends ScalaDocumentationProviderTestBase 
         |   <pre><code>/**   text inner   3   */</code></pre> <p>""".stripMargin
 
     doGenerateDocContentTest(fileContent, expectedContent)
+  }
+
+  def testWIP_FAILING_TEST(): Unit ={
+    throw new AssertionFailedException("failing test to trigger TeamCity tests")
   }
 }

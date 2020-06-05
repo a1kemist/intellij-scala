@@ -1,34 +1,29 @@
 package org.jetbrains.plugins.scala.editor.documentationProvider
 
-import java.lang.{StringBuilder => JStringBuilder}
-
 import com.intellij.codeInsight.javadoc.JavaDocInfoGenerator
 import com.intellij.lang.documentation.DocumentationMarkup
-import com.intellij.openapi.fileTypes.StdFileTypes
-import com.intellij.openapi.project.Project
 import com.intellij.psi._
 import com.intellij.psi.javadoc.PsiDocComment
 import org.apache.commons.lang.StringEscapeUtils.escapeHtml
 import org.jetbrains.plugins.scala.editor.documentationProvider.ScalaDocumentationUtils.EmptyDoc
 import org.jetbrains.plugins.scala.editor.documentationProvider.ScaladocWikiProcessor.WikiProcessorResult
 import org.jetbrains.plugins.scala.editor.documentationProvider.extensions.PsiMethodExt
-import org.jetbrains.plugins.scala.extensions.&&
-import org.jetbrains.plugins.scala.extensions.{IteratorExt, PsiClassExt, PsiElementExt, PsiMemberExt, PsiNamedElementExt}
+import org.jetbrains.plugins.scala.extensions.{&&, PsiClassExt, PsiElementExt, PsiMemberExt, PsiNamedElementExt}
 import org.jetbrains.plugins.scala.lang.psi
+import org.jetbrains.plugins.scala.lang.psi.HtmlPsiUtils
 import org.jetbrains.plugins.scala.lang.psi.api.base.ScAnnotationsHolder
 import org.jetbrains.plugins.scala.lang.psi.api.base.patterns.ScBindingPattern
 import org.jetbrains.plugins.scala.lang.psi.api.expr.ScExpression
 import org.jetbrains.plugins.scala.lang.psi.api.statements._
-import org.jetbrains.plugins.scala.lang.psi.api.statements.params.{ScParameter, ScTypeParam}
+import org.jetbrains.plugins.scala.lang.psi.api.statements.params.ScParameter
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel._
 import org.jetbrains.plugins.scala.lang.psi.api.toplevel.templates.{ScExtendsBlock, ScTemplateParents}
-import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScClass, ScMember, ScObject, ScTypeDefinition}
+import org.jetbrains.plugins.scala.lang.psi.api.toplevel.typedef.{ScDocCommentOwner, ScMember, ScObject, ScTypeDefinition}
 import org.jetbrains.plugins.scala.lang.psi.types.api.presentation.AccessModifierRenderer.AccessQualifierRenderer
 import org.jetbrains.plugins.scala.lang.psi.types.api.presentation.TextEscaper.Html
 import org.jetbrains.plugins.scala.lang.psi.types.api.presentation.TypeAnnotationRenderer.ParameterTypeDecorateOptions
 import org.jetbrains.plugins.scala.lang.psi.types.api.presentation._
 import org.jetbrains.plugins.scala.lang.psi.types.{ScParameterizedType, ScType, TypePresentationContext}
-import org.jetbrains.plugins.scala.lang.psi.{HtmlPsiUtils, PresentationUtil}
 import org.jetbrains.plugins.scala.lang.scaladoc.psi.api.ScDocComment
 import org.jetbrains.plugins.scala.project.ProjectContext
 
@@ -182,15 +177,17 @@ object ScalaDocGenerator {
         appendDeclMainSection(param)
       }
 
-    withHtmlMarkup {
-      e match {
-        case typeDef: ScTypeDefinition => appendTypeDef(typeDef)
-        case fun: ScFunction           => appendFunction(fun)
-        case tpe: ScTypeAlias          => appendTypeAlias(tpe)
-        case decl: ScValueOrVariable   => appendValOrVar(decl)
-        case pattern: ScBindingPattern => appendBindingPattern(pattern)
-        case param: ScParameter        => appendParameter(param)
-        case _                         =>
+    html {
+      body {
+        e match {
+          case typeDef: ScTypeDefinition => appendTypeDef(typeDef)
+          case fun: ScFunction           => appendFunction(fun)
+          case tpe: ScTypeAlias          => appendTypeAlias(tpe)
+          case decl: ScValueOrVariable   => appendValOrVar(decl)
+          case pattern: ScBindingPattern => appendBindingPattern(pattern)
+          case param: ScParameter        => appendParameter(param)
+          case _                         =>
+        }
       }
     }
 
@@ -289,9 +286,9 @@ object ScalaDocGenerator {
     docComment: PsiDocComment,
     isInherited: Boolean
   ): String = {
-    val commentParsed = docComment match {
-      case scalaDoc: ScDocComment => generateScalaDocInfoContent(docOwner, scalaDoc)
-      case _                      => generateJavaDocInfoContent(docOwner)
+    val commentParsed = (docOwner, docComment) match {
+      case (owner: ScDocCommentOwner, doc: ScDocComment) => generateScalaDocInfoContent(owner, doc)
+      case _                                             => generateJavaDocInfoContent(docOwner)
     }
     if (isInherited)
       wrapWithInheritedDescription(docOwner.containingClass)(commentParsed)
@@ -309,136 +306,52 @@ object ScalaDocGenerator {
     method.superMethods.map(base => (base, base.getDocComment)).find(_._2 != null)
 
   def generateScalaDocInfoContent(
-    docCommentOwner: PsiDocCommentOwner,
+    docCommentOwner: ScDocCommentOwner,
     docComment: ScDocComment
-  ): String =
-    prepareFakeJavaElementWithComment(docCommentOwner, docComment) match {
-      case Some((javaElement, sections)) =>
-        val javaDoc = generateJavaDocInfoContent(javaElement)
-        val result = insertCustomSections(javaDoc, sections)
-        result
-      case _ => ""
+  ): String = {
+    val WikiProcessorResult(content, sections) = ScaladocWikiProcessor.fooTODO(docCommentOwner, docComment)
+    val buffer = StringBuilder.newBuilder
+    if (content.nonEmpty) {
+      buffer
+        .append(DocumentationMarkup.CONTENT_START)
+        .append(content).append("<p>")
+        .append(DocumentationMarkup.CONTENT_END)
     }
+    if (sections.nonEmpty) {
+      buffer.append(DocumentationMarkup.SECTIONS_START)
+      appendSections(sections, buffer)
+      buffer.append(DocumentationMarkup.SECTIONS_END)
+    }
+    buffer.result
+  }
 
   def generateRenderedScalaDocContent(
     docCommentOwner: PsiDocCommentOwner,
     docComment: ScDocComment
-  ): String =
-    prepareFakeJavaElementWithComment(docCommentOwner, docComment) match {
-      case Some((javaElement, sections)) =>
-        val javaDoc = generateRenderedJavaDocInfo(javaElement)
-        val result = insertCustomSections(javaDoc, sections)
-        result
-      case _ => ""
-    }
+  ): String = ???
+//    prepareFakeJavaElementWithComment(docCommentOwner, docComment) match {
+//      case Some((javaElement, sections)) =>
+//        val javaDoc = generateRenderedJavaDocInfo(javaElement)
+//        val result = insertCustomSections(javaDoc, sections)
+//        result
+//      case _ => ""
+//    }
 
-  private def insertCustomSections(javaDoc: String, sections: Seq[ScaladocWikiProcessor.Section]): String = {
-    import DocumentationMarkup._
-    val sectionsEnd = javaDoc.indexOf(SECTIONS_END)
-    if (sectionsEnd > -1)
-      return insertCustomSections(javaDoc, sectionsEnd, sections, createSectionsTag = false)
-
-    val contentEndTag = javaDoc.indexOf(CONTENT_END)
-    if (contentEndTag > -1)
-      return insertCustomSections(javaDoc, contentEndTag + CONTENT_END.length, sections, createSectionsTag = true)
-
-    val definitionEndTag = javaDoc.indexOf(DEFINITION_END)
-    if (definitionEndTag > -1)
-      return insertCustomSections(javaDoc, definitionEndTag + DEFINITION_END.length, sections, createSectionsTag = true)
-
-    // assuming that it's the impossible case and generated javadoc at least contains definition section
-    ""
+  private def generateRenderedJavaDocInfo(element: PsiElement): String = {
+    val generator = new JavaDocInfoGenerator(element.getProject, element)
+    generator.generateRenderedDocInfo
   }
 
-  private def insertCustomSections(
-    javadoc: String,
-    index: Int,
-    sections: Seq[ScaladocWikiProcessor.Section],
-    createSectionsTag: Boolean
-  ): String = {
-    import DocumentationMarkup._
-    val builder = new JStringBuilder
-    builder.append(javadoc, 0, index)
-    if (createSectionsTag)
-      builder.append(SECTIONS_START)
-    appendCustomSections(builder, sections)
-    if (createSectionsTag)
-      builder.append(SECTIONS_END)
-    builder.append(javadoc, index, javadoc.length)
-    builder.toString
-  }
-
-  private def appendCustomSections(output: JStringBuilder, sections: Seq[ScaladocWikiProcessor.Section]): Unit =
+  private def appendSections(sections: Seq[ScaladocWikiProcessor.Section], result: StringBuilder): Unit =
     sections.foreach { section =>
       import DocumentationMarkup._
-      output
+      result
         .append(SECTION_HEADER_START)
         .append(section.title)
-        .append(":")
         .append(SECTION_SEPARATOR)
         .append(section.content)
         .append(SECTION_END)
     }
-
-  private def prepareFakeJavaElementWithComment(
-    docCommentOwner: PsiDocCommentOwner,
-    docComment: ScDocComment
-  ): Option[(PsiDocCommentOwner, Seq[ScaladocWikiProcessor.Section])] = {
-    val WikiProcessorResult(withReplacedWikiTags, sections) = ScaladocWikiProcessor.replaceWikiWithTags(docComment)
-    createFakeJavaElement(docCommentOwner, withReplacedWikiTags).map((_, sections))
-  }
-
-  private def createFakeJavaElement(
-    elem: PsiDocCommentOwner,
-    docText: String
-  ): Option[PsiDocCommentOwner] = {
-    def getParams(fun: ScParameterOwner): String =
-      fun.parameters.map(param => "int     " + escapeHtml(param.name)).mkString("(", ",\n", ")")
-
-    def getTypeParams(tParams: Seq[ScTypeParam]): String =
-      if (tParams.isEmpty) ""
-      else tParams.map(param => escapeHtml(param.name)).mkString("<", " , ", ">")
-
-    val javaText = elem match {
-      case clazz: ScClass =>
-        s"""
-           |class A {
-           |$docText
-           |public ${getTypeParams(clazz.typeParameters)}void f${getParams(clazz)}{
-           |}""".stripMargin
-      case typeAlias: ScTypeAlias =>
-        s"""$docText
-           |class A${getTypeParams(typeAlias.typeParameters)} {}""".stripMargin
-      case _: ScTypeDefinition =>
-        s"""$docText
-           |class A {
-           |}""".stripMargin
-      case f: ScFunction =>
-        s"""class A {
-           |$docText
-           |public ${getTypeParams(f.typeParameters)}int f${getParams(f)} {}
-           |}""".stripMargin
-      case m: PsiMethod =>
-        s"""class A {
-           |${m.getText}
-           |}""".stripMargin
-      case _ =>
-        s"""$docText
-           |class A""".stripMargin
-    }
-
-    val javaDummyFile = createDummyJavaFile(javaText, elem.getProject)
-
-    val clazz = javaDummyFile.getClasses.head
-    // not using getAllMethods to avoid accessing indexes (and thus work in dump mode)
-    elem match {
-      case _: ScFunction | _: ScClass | _: PsiMethod => clazz.children.findByType[PsiMethod]
-      case _                                         => Some(clazz)
-    }
-  }
-
-  private def createDummyJavaFile(text: String, project: Project): PsiJavaFile =
-    PsiFileFactory.getInstance(project).createFileFromText("dummy", StdFileTypes.JAVA, text).asInstanceOf[PsiJavaFile]
 
   private def generateJavaDocInfoContent(element: PsiElement): String = {
     val javadoc = generateJavaDocInfo(element)
@@ -451,11 +364,6 @@ object ScalaDocGenerator {
     val generator = new JavaDocInfoGenerator(element.getProject, element)
     generator.generateDocInfoCore(builder, false)
     builder.toString
-  }
-
-  private def generateRenderedJavaDocInfo(element: PsiElement): String = {
-    val generator = new JavaDocInfoGenerator(element.getProject, element)
-    generator.generateRenderedDocInfo
   }
 
   // TODO: this is far from perfect to rely on text... =(
